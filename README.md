@@ -30,7 +30,7 @@ To use DramaNite, you need to have Python installed on your system. Additionally
     pip install -r requirements.txt
 
 3. **Install MPV**:
-    Windows: Download and install from MPV's official website
+    Windows: Download and install from MPV's official website. You can also download from the Windows Store (it's the unofficial version).
     MacOS/Linux: Use package managers like 'brew' or 'apt'
 
 ### Usage
