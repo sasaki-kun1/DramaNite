@@ -23,10 +23,11 @@ To use DramaNite, you need to have Python installed on your system. Additionally
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/DramaNite.git
+   git clone https://github.com/sasaki-kun1/DramaNite.git
    cd DramaNite
 
 2. **Install Python dependencies**:
+    ```bash
     pip install -r requirements.txt
 
 3. **Install MPV**:
