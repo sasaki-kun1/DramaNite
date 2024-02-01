@@ -7,6 +7,7 @@ from utils import *
 from kissasian import get_soup
 from bs4 import BeautifulSoup
 from history import *
+from urllib.parse import urljoin
 
 # Create a persistent requests session
 session = requests.Session()
@@ -48,29 +49,34 @@ def get_stream_url(series_id, ep_no, BASE_URL):
     episode_url = BASE_URL + f"Drama/{series_id}/Episode-{ep_no}"
     response = session.get(episode_url)  # Use the session to make the request
     soup = BeautifulSoup(response.content, 'html.parser')
+
     if response.status_code == 200:
-        try:
-            vidmoly_url = soup.find("iframe", {"id": "mVideo"}).attrs['src']
-            # Assuming vidmoly_url is a complete URL including the http(s)://
-            vid_res = session.get(vidmoly_url)  # Use the session to make the request
-            if vid_res.status_code == 200:
-                pattern = re.compile(r'file:"(https?://[^"]+)"')
-                match = re.search(pattern, vid_res.text)
-                if match:
-                    return match.group(1)  # Return the stream URL
-                else:
-                    print("Stream URL not found in iframe response")
-            else:
-                print(f"Failed to access iframe URL {vidmoly_url}: Status code {vid_res.status_code}")
-        except AttributeError:
-            print(f"Error getting iframe URL for {episode_url}")
+        iframes = soup.find_all("iframe")
+        for iframe in iframes:
+            try:
+                iframe_src = iframe.attrs.get('src')
+                if iframe_src:
+                    # Make sure the iframe URL is absolute before making the request
+                    iframe_url = urljoin(episode_url, iframe_src)
+                    vid_res = session.get(iframe_url)  # Use the session to make the request
+                    if vid_res.status_code == 200:
+                        pattern = re.compile(r'file:"(https?://[^"]+)"')
+                        match = re.search(pattern, vid_res.text)
+                        if match:
+                            # Found the stream URL, return and exit the loop
+                            return match.group(1)
+                    else:
+                        print(f"Failed to access iframe URL {iframe_url}: Status code {vid_res.status_code}")
+            except AttributeError as e:
+                print(f"Attribute error when processing iframe: {e}")
     else:
         print(f"Failed to access {episode_url}: Status code {response.status_code}")
 
-    with open(COOKIES_FILE, 'w') as f:
-        json.dump(requests.utils.dict_from_cookiejar(session.cookies), f)
-
+    # If the code reaches this point, it means no valid stream URL was found in any iframe
+    print("Stream URL not found in any iframe response")
     return None
+
+   
 
 def read_watch_history():
     try:
