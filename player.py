@@ -7,7 +7,7 @@ from utils import *
 from kissasian import get_soup
 from bs4 import BeautifulSoup
 from history import *
-from urllib.parse import urljoin
+from urllib.parse import urlparse, urljoin
 
 # Create a persistent requests session
 session = requests.Session()
@@ -43,28 +43,29 @@ def episode_menu(eps_list, series_id):
         episode_number = episode_index + 1
 
         # Call play_episode with series_id and episode_number
-        play_episode(series_id, episode_number)
+        play_episode(series_id, episode_number, BASE_URL, session)
 
-def get_stream_url(series_id, ep_no, BASE_URL):
+def get_stream_url(series_id, ep_no, BASE_URL, session):
     episode_url = BASE_URL + f"Drama/{series_id}/Episode-{ep_no}"
     response = session.get(episode_url)  # Use the session to make the request
     soup = BeautifulSoup(response.content, 'html.parser')
-
+    
     if response.status_code == 200:
         iframes = soup.find_all("iframe")
         for iframe in iframes:
             try:
                 iframe_src = iframe.attrs.get('src')
                 if iframe_src:
-                    # Make sure the iframe URL is absolute before making the request
-                    iframe_url = urljoin(episode_url, iframe_src)
+                    # Ensure the iframe URL is absolute before making the request
+                    iframe_url = urljoin(BASE_URL, iframe_src)
+                    iframe_host = urlparse(iframe_url).netloc
                     vid_res = session.get(iframe_url)  # Use the session to make the request
                     if vid_res.status_code == 200:
                         pattern = re.compile(r'file:"(https?://[^"]+)"')
                         match = re.search(pattern, vid_res.text)
                         if match:
-                            # Found the stream URL, return and exit the loop
-                            return match.group(1)
+                            # Found the stream URL, return it and the iframe host
+                            return match.group(1), iframe_host
                     else:
                         print(f"Failed to access iframe URL {iframe_url}: Status code {vid_res.status_code}")
             except AttributeError as e:
@@ -72,11 +73,8 @@ def get_stream_url(series_id, ep_no, BASE_URL):
     else:
         print(f"Failed to access {episode_url}: Status code {response.status_code}")
 
-    # If the code reaches this point, it means no valid stream URL was found in any iframe
     print("Stream URL not found in any iframe response")
-    return None
-
-   
+    return None, None
 
 def read_watch_history():
     try:
@@ -97,24 +95,31 @@ def update_watch_history(series_id, ep_no):
         history[series_id].append(ep_no)
     write_watch_history(history)
 
-def play_episode(series_id, ep_no):
-    stream_url = get_stream_url(series_id, ep_no, BASE_URL)
+def play_episode(series_id, ep_no, BASE_URL, session):
+    stream_url, iframe_host = get_stream_url(series_id, ep_no, BASE_URL, session)
     if stream_url:
         print(f"Playing {series_id} Episode {ep_no}... URL: {stream_url}")
-        headers = {
-            "Referer": "https://vidmoly.to/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            # Add other necessary headers here if needed
-        }
+        
+        # Set headers with dynamic Referer based on the iframe host URL.
+        headers = [
+            f"Referer: {iframe_host}",
+            f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            # Include additional headers as needed
+        ]
+        
+        # The headers must be passed as a list of strings, each string being a header line.
+        command = ['mpv', '--no-ytdl', '--http-header-fields=' + '\\n'.join(headers), stream_url]
+        
         try:
-            # Use the stream URL to play the video directly
-            command = ['mpv', '--no-ytdl', '--http-header-fields=' + ','.join(f'{k}: {v}' for k, v in headers.items()), stream_url]
-            subprocess.run(command, check=True)
+            # Use Popen to open mpv without waiting for it to close.
+            process = subprocess.Popen(command)
+            # You can wait for the process to complete if needed, or handle it asynchronously.
+            process.wait()
+            # Assuming update_watch_history is a valid function to call
             update_watch_history(series_id, ep_no)
         except subprocess.CalledProcessError as e:
             print(f"MPV failed with exit code {e.returncode}")
-            print(e.stderr)
+            print(e.stderr.decode() if e.stderr else "No error message")
     else:
         print("Stream URL not found or error occurred.")
-    session.close()
 
