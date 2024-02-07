@@ -4,6 +4,9 @@ from bs4 import BeautifulSoup
 from utils import clear_screen, print_header
 from library import write_library, read_library
 
+BASE_URL = "https://kissasian.lu/"
+session = requests.Session()
+
 def get_soup(url, headers=None):
     session = requests.Session()
     response = session.get(url, headers=headers)
@@ -57,8 +60,8 @@ def series_detail_menu(series):
     while True:
         clear_screen()
         print_header()
-        # Update to unpack summary as well
-        summary, date_aired, cast, no_eps, eps_list = get_series_details(series['url'])
+        summary, date_aired, cast, no_eps, eps_list = get_series_details(series['url'])  # Assume get_series_details now also requires session
+
         print(f"Title: {series['title']}\n\n{date_aired}\n\nSummary: {summary}\n\nCast: {', '.join(cast)}\n\nNumber of Episodes: {no_eps}\n")
 
         library = read_library()
@@ -74,12 +77,13 @@ def series_detail_menu(series):
 
         if answer == 'Add to Library':
             library.append(series)
-            write_library(library)
+            write_library(library)  # Ensure write_library is properly implemented
             print("Series added to library.")
             input("Press Enter to continue...")
         elif answer == 'List Episodes':
             series_id = series['url'].split('/')[-1]
-            episode_menu(eps_list, series_id)  # Pass series_id and episode list
+            # Now passing BASE_URL and session to episode_menu
+            episode_menu(eps_list, series_id, BASE_URL, session)
         elif answer == 'Go Back to Search Results':
             return 'GoBackToResults'
         

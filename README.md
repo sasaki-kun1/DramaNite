@@ -8,6 +8,7 @@ DramaNite is a Python application designed to streamline the process of searchin
 - **Personal Drama Library**: Add and remove dramas from a personal library.
 - **Watch History**: Keep track of watched episodes.
 - **Stream Episodes**: Play drama episodes directly via MPV player.
+- **Download Episodes**: Download drama episodes directly.
 - **Clear and User-Friendly Interface**: Navigate easily through the application with clear prompts and commands.
 
 ## Installation

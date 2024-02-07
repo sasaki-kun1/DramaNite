@@ -15,4 +15,17 @@ ______                             _     _ _
 |___/ |_|  \\__,_|_| |_| |_|\\__,_| \\_| \\_/_|\\__\\___|
                                                    
     """ + END)
-    print("Welcome Back to Drama Nite!")
+    print("Welcome Back to Drama Nite!\n")
+
+def clear_cookies():
+    COOKIES_FILE_PATH = 'data/cookies.json'
+    try:
+        # Check if the cookies file exists
+        if os.path.exists(COOKIES_FILE_PATH):
+            # Delete the file
+            os.remove(COOKIES_FILE_PATH)
+            print("Cookies have been cleared.")
+        else:
+            print("Cookies file does not exist.")
+    except Exception as e:
+        print(f"An error occurred while trying to clear cookies: {e}")

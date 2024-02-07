@@ -2,12 +2,18 @@ import re
 import inquirer
 import subprocess
 import json
+import os
 import requests
+import logging
+from downloads import *
 from utils import *
 from kissasian import get_soup
 from bs4 import BeautifulSoup
 from history import *
 from urllib.parse import urlparse, urljoin
+
+logging.basicConfig(level=logging.INFO, filename='data/app.log', filemode='w',
+                    format='%(name)s - %(levelname)s - %(message)s')
 
 # Create a persistent requests session
 session = requests.Session()
@@ -24,26 +30,45 @@ try:
 except FileNotFoundError:
     print("No cookies file found. A new one will be created after the first request.")
 
-def episode_menu(eps_list, series_id):
-    BASE_URL = "https://kissasian.lu/"
+def episode_menu(eps_list, series_id, BASE_URL, session):
     while True:
         clear_screen()
         print_header()
-        choices = [f'Episode {i+1}' for i in range(len(eps_list))] + ['Go Back']
+        choices = [f"Episode {i + 1}" for i in range(len(eps_list))] + ['Go Back']
         questions = [inquirer.List('episode', message="Select an episode", choices=choices)]
         selected = inquirer.prompt(questions)['episode']
         
         if selected == 'Go Back':
             break
 
-        # Retrieve the selected episode index
-        episode_index = choices.index(selected)
+        episode_number = int(selected.split(' ')[1])
         
-        # The episode number is one more than the index
-        episode_number = episode_index + 1
+        # Check if the episode is already downloaded
+        if is_episode_downloaded(series_id, episode_number):
+            # If downloaded, only show options to Play or Go Back
+            action_choices = ['Play', 'Go Back']
+        else:
+            # If not downloaded, offer options to Stream, Download, or Go Back
+            action_choices = ['Stream', 'Download', 'Go Back']
 
-        # Call play_episode with series_id and episode_number
-        play_episode(series_id, episode_number, BASE_URL, session)
+        action_questions = [inquirer.List('action', message="What would you like to do?", choices=action_choices)]
+        action_selected = inquirer.prompt(action_questions)['action']
+
+        if action_selected == 'Play':
+            file_path = os.path.join(DOWNLOADS_DIR, f"{series_id} - Episode {episode_number}.mp4")
+            play_downloaded_episode(file_path)
+            update_watch_history(series_id, episode_number)  # Make sure this function exists and is imported
+        elif action_selected == 'Stream':
+            play_episode(series_id, episode_number, BASE_URL, session)
+        elif action_selected == 'Download':
+            # No need to check if it's downloaded again, since the option won't appear if it's already downloaded
+            stream_url, iframe_host = get_stream_url(series_id, episode_number, BASE_URL, session)
+            if stream_url:
+                download_episode(stream_url, series_id, episode_number, iframe_host)  # Ensure this function is correctly implemented
+            else:
+                print("Unable to retrieve stream URL for download.")
+        elif action_selected == 'Go Back':
+            continue
 
 def get_stream_url(series_id, ep_no, BASE_URL, session):
     episode_url = BASE_URL + f"Drama/{series_id}/Episode-{ep_no}"
@@ -67,14 +92,15 @@ def get_stream_url(series_id, ep_no, BASE_URL, session):
                             # Found the stream URL, return it and the iframe host
                             return match.group(1), iframe_host
                     else:
-                        print(f"Failed to access iframe URL {iframe_url}: Status code {vid_res.status_code}")
+                        logging.error(f"Failed to access iframe URL {iframe_url}: Status code {vid_res.status_code}")
             except AttributeError as e:
-                print(f"Attribute error when processing iframe: {e}")
+                logging.exception(f"Attribute error when processing iframe: {e}")
     else:
-        print(f"Failed to access {episode_url}: Status code {response.status_code}")
+        logging.error(f"Failed to access {episode_url}: Status code {response.status_code}")
 
-    print("Stream URL not found in any iframe response")
+    logging.error("Stream URL not found in any iframe response")
     return None, None
+
 
 def read_watch_history():
     try:
