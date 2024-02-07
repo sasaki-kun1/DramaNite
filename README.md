@@ -37,8 +37,9 @@ To use DramaNite, you need to have Python installed on your system. Additionally
 ### Usage
 
 Run the application from the command line:
+```bash
 python3 main.py
-
+```
 Follow the on-screen prompts to navigate through the application.
 
 ### Contributing
