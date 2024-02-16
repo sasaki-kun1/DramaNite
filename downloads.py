@@ -3,11 +3,13 @@ import os
 import inquirer
 import shutil
 import logging
-import ffmpeg
+import threading
 from history import update_watch_history
-from tqdm import tqdm
 from utils import *
 
+pending_downloads = {}  # Global dictionary to keep track of pending downloads
+# Global flag to signal termination
+should_terminate = False
 DOWNLOADS_DIR = 'data/downloads/'
 logging.basicConfig(level=logging.INFO, filename='data/app.log', filemode='w',
                     format='%(name)s - %(levelname)s - %(message)s')
@@ -19,23 +21,52 @@ def downloads_menu():
     while True:
         clear_screen()
         print_header()
-        downloads = get_downloads()
+        downloads = get_downloads()  # Retrieves all files, including those still downloading
 
-        if not downloads:
+        if pending_downloads:
+            print("Pending Downloads:")
+            for title, progress in pending_downloads.items():
+                print(f"{title}: {progress}%")
+            print("\n")
+
+        # Filter out pending downloads from the downloads list
+        completed_downloads = [d for d in downloads if d not in pending_downloads]
+
+        if not completed_downloads and not pending_downloads:
             print("Your downloads folder is empty.")
             input("Press Enter to go back...")
             break
 
-        choices = downloads + ['Go Back to Main Menu']
-        questions = [inquirer.List('download', message="Select a download to play", choices=choices)]
+        choices = completed_downloads + ['Go Back to Main Menu']
+        questions = [inquirer.List('download', message="Select an episode", choices=choices)]
         download_selection = inquirer.prompt(questions)['download']
 
         if download_selection == 'Go Back to Main Menu':
             break
 
-        # Assuming play_downloaded_episode is a function you implement to play the selected download
-        play_downloaded_episode(os.path.join(DOWNLOADS_DIR, download_selection))
+        if download_selection in pending_downloads:
+            print(f"{download_selection} is still downloading.")
+            input("Press Enter to go back...")
+            continue
 
+        # For completed downloads, handle as before
+        file_path = os.path.join(DOWNLOADS_DIR, download_selection)
+        action_choices = ['Play', 'Delete', 'Go Back']
+        action_questions = [inquirer.List('action', message="What would you like to do with the selected download?", choices=action_choices)]
+        action_selected = inquirer.prompt(action_questions)['action']
+
+        if action_selected == 'Play':
+            play_downloaded_episode(file_path)
+        elif action_selected == 'Delete':
+            confirm_delete = inquirer.confirm(message="Are you sure you want to delete this download?", default=False)
+            if confirm_delete:
+                try:
+                    os.remove(file_path)
+                    print(f"{download_selection} has been deleted.")
+                    input("Press Enter to continue...")
+                except OSError as e:
+                    print(f"Error deleting file: {e}")
+                    
 def get_downloads():
     """Retrieve a list of all downloaded episodes."""
     try:
@@ -114,23 +145,26 @@ def download_episode(stream_url, series_title, episode_number, iframe_host):
     filename = f"{series_title} - Episode {episode_number}.mp4"
     output_path = os.path.join(DOWNLOADS_DIR, filename)
 
-    # Format headers correctly for ffmpeg
-    headers = f"Referer: {iframe_host}\\r\\n" + \
-              "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    # Adding to pending downloads with an initial descriptive status
+    pending_downloads[filename] = "Downloading..."
 
-    cmd = [
-        'ffmpeg',
-        '-headers', f"{headers}",
-        '-i', f"{stream_url}",
-        '-c', 'copy',
-        '-bsf:a', 'aac_adtstoasc',
-        f"{output_path}"
-    ]
+    headers = f"Referer: {iframe_host}\\r\\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    cmd = ['ffmpeg', '-headers', headers, '-i', stream_url, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', output_path]
 
-    try:
-        # Use subprocess.run for simpler error handling and output management
-        subprocess.run(cmd, check=True, text=True, stderr=subprocess.PIPE)
-        print(f"Download completed: {output_path}")
-    except subprocess.CalledProcessError as e:
-        logging.exception(f"Error downloading episode: {e.stderr}")
-        print(f"Error downloading episode: {e.stderr}")
+    def run_download():
+        try:
+            with open(os.devnull, 'w') as devnull:
+                subprocess.run(cmd, stderr=devnull, stdout=devnull)
+
+            # Assuming download successful if no exception was raised
+            print(f"\nDownload of {filename} completed.\n")
+        finally:
+            # Remove from pending downloads whether successful or not
+            if filename in pending_downloads:
+                del pending_downloads[filename]
+
+    print(f"Now downloading Episode {episode_number} in the background...\n")
+    print("Do not close application until download is finished.")
+
+    # Start the download in a background thread
+    threading.Thread(target=run_download, daemon=True).start()

@@ -5,9 +5,10 @@ import json
 import os
 import requests
 import logging
+import threading
+from main import clear_screen
 from downloads import *
 from utils import *
-from kissasian import get_soup
 from bs4 import BeautifulSoup
 from history import *
 from urllib.parse import urlparse, urljoin
@@ -30,45 +31,88 @@ try:
 except FileNotFoundError:
     print("No cookies file found. A new one will be created after the first request.")
 
+
 def episode_menu(eps_list, series_id, BASE_URL, session):
+    last_selected_episode = None  # Track the last selected episode
+    last_action = None  # Track the last action taken
+
     while True:
         clear_screen()
         print_header()
+
+        # If an episode was previously selected, use that, otherwise default to the first episode
+        initial_choice_index = eps_list.index(last_selected_episode) if last_selected_episode in eps_list else 0
         choices = [f"Episode {i + 1}" for i in range(len(eps_list))] + ['Go Back']
-        questions = [inquirer.List('episode', message="Select an episode", choices=choices)]
+        questions = [
+            inquirer.List('episode', 
+                          message="Select an episode", 
+                          choices=choices,
+                          default=choices[initial_choice_index])  # Set the default selection based on the last action
+        ]
         selected = inquirer.prompt(questions)['episode']
         
         if selected == 'Go Back':
-            break
+            break  # Exit the loop to go back to the previous menu
 
         episode_number = int(selected.split(' ')[1])
-        
-        # Check if the episode is already downloaded
+        last_selected_episode = selected  # Update the last selected episode
+
+        # Determine the action choices based on the download status
         if is_episode_downloaded(series_id, episode_number):
-            # If downloaded, only show options to Play or Go Back
             action_choices = ['Play', 'Go Back']
         else:
-            # If not downloaded, offer options to Stream, Download, or Go Back
             action_choices = ['Stream', 'Download', 'Go Back']
-
-        action_questions = [inquirer.List('action', message="What would you like to do?", choices=action_choices)]
+        action_questions = [
+            inquirer.List('action', 
+                          message="What would you like to do?", 
+                          choices=action_choices,
+                          default=0)  # Set the default action based on the last action
+        ]
         action_selected = inquirer.prompt(action_questions)['action']
+        last_action = action_selected  # Update the last action taken
 
         if action_selected == 'Play':
-            file_path = os.path.join(DOWNLOADS_DIR, f"{series_id} - Episode {episode_number}.mp4")
-            play_downloaded_episode(file_path)
-            update_watch_history(series_id, episode_number)  # Make sure this function exists and is imported
+            filename = f"{series_id} - Episode {episode_number}.mp4"
+            file_path = os.path.join(DOWNLOADS_DIR, filename)
+            
+            # Check if the episode is still downloading
+            if filename in pending_downloads:
+                print("Episode is still downloading, will stream instead.")
+                play_episode(series_id, episode_number, BASE_URL, session)
+                update_watch_history(series_id, episode_number)
+                input("Press Enter to continue...")  # Pause after the message
+            else:
+                # If the episode is not downloading, proceed to play the downloaded file
+                play_downloaded_episode(file_path)
+                update_watch_history(series_id, episode_number)
         elif action_selected == 'Stream':
+            # Assuming play_episode does not break the loop
             play_episode(series_id, episode_number, BASE_URL, session)
         elif action_selected == 'Download':
-            # No need to check if it's downloaded again, since the option won't appear if it's already downloaded
-            stream_url, iframe_host = get_stream_url(series_id, episode_number, BASE_URL, session)
-            if stream_url:
-                download_episode(stream_url, series_id, episode_number, iframe_host)  # Ensure this function is correctly implemented
+            filename = f"{series_id} - Episode {episode_number}.mp4"
+
+            # Check if the episode is already downloading
+            if filename in pending_downloads:
+                print("This episode is already downloading.")
+                input("Press Enter to continue...")  # Allow user to read the message before continuing
             else:
-                print("Unable to retrieve stream URL for download.")
-        elif action_selected == 'Go Back':
-            continue
+                stream_url, iframe_host = get_stream_url(series_id, episode_number, BASE_URL, session)
+                if stream_url:
+                    # Add the episode to pending_downloads before starting the download
+                    pending_downloads[filename] = "Downloading..."
+                    
+                    # Define the download function that also handles removal from pending_downloads upon completion
+                    def download_and_cleanup():
+                        download_episode(stream_url, series_id, episode_number, iframe_host)
+                        # Assuming download_episode removes the episode from pending_downloads upon completion
+
+                    # Start the download in a background thread; does not break the loop
+                    download_thread = threading.Thread(target=download_and_cleanup, daemon=True)
+                    download_thread.start()
+                    input("Press Enter to continue...")  # After pressing Enter, the loop will continue
+                else:
+                    print("Unable to retrieve stream URL for download.")
+                    input("Press Enter to continue...")  # Ensure this is here so the loop can continue after displaying the message
 
 def get_stream_url(series_id, ep_no, BASE_URL, session):
     episode_url = BASE_URL + f"Drama/{series_id}/Episode-{ep_no}"

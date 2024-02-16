@@ -60,7 +60,7 @@ def series_detail_menu(series):
     while True:
         clear_screen()
         print_header()
-        summary, date_aired, cast, no_eps, eps_list = get_series_details(series['url'])  # Assume get_series_details now also requires session
+        summary, date_aired, cast, no_eps, eps_list = get_series_details(series['url'])
 
         print(f"Title: {series['title']}\n\n{date_aired}\n\nSummary: {summary}\n\nCast: {', '.join(cast)}\n\nNumber of Episodes: {no_eps}\n")
 

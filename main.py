@@ -1,7 +1,8 @@
 import json
 import os
 import inquirer
-from downloads import downloads_menu
+import time
+from downloads import downloads_menu, pending_downloads
 from settings import settings_menu
 from utils import clear_screen, print_header
 from history import display_watch_history
@@ -61,7 +62,7 @@ def main_menu():
     print_header()
     choices = ['Search', 'My Library', 'Downloads', 'Watch History', 'Settings', 'Exit']
     question = [
-        inquirer.List('action', message="Choose an option", choices=choices)
+        inquirer.List('action', message="Choose an option", choices=choices, default=0)
     ]
     answer = inquirer.prompt(question)
     return answer['action']
@@ -99,7 +100,20 @@ def main():
         elif action == 'Settings':
             settings_menu()
         elif action == 'Exit':
-            break
+            # Check for pending downloads before exiting
+            if pending_downloads:  # Check if the dictionary is not empty
+                user_response = input("Wait! You still have pending downloads! \nExiting may result in corrupted download files. Are you sure you want to exit? (y/N): ").strip().lower()
+                
+                if user_response == 'y':
+                    print("Exiting... Your downloads will still continue until this terminal is closed.")
+                    time.sleep(3)  # Give some time for threads to terminate
+                    break
+                elif user_response == "N" or "n" :
+                    print("Continuing with downloads...")
+                    time.sleep(2)
+                    continue  # Go back to the main menu
+            else:
+                break  # Safe to exit if no downloads are pending
 
 if __name__ == "__main__":
     main()
